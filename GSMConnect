@@ -1,4 +1,3 @@
-package modem;
 
 import gnu.io.CommPortIdentifier;
 import gnu.io.CommPortOwnershipListener;
@@ -31,7 +30,7 @@ import javax.swing.JTextArea;
  *
  * @author andrelp
  */
-public class GSMConnect implements SerialPortEventListener, CommPortOwnershipListener {
+public class GSMGateway implements SerialPortEventListener, CommPortOwnershipListener {
 
     private String comPort; // This COM Port must be connect with GSM Modem or your mobile phone
     private String messageString = "";
@@ -41,14 +40,9 @@ public class GSMConnect implements SerialPortEventListener, CommPortOwnershipLis
     private OutputStream outputStream = null;
     private SerialPort serialPort;
     String readBufferTrial = "";
-    private int count = 0;
-    private boolean buffer;
-//    private Lock lock;
-//    private Condition condition;
+
 
     /**
-     * Construtor da classe GSMConnect, apenas necessita que seja fornecido a
-     * identificação da porta COM
      *
      * @param comm
      */
@@ -79,15 +73,15 @@ public class GSMConnect implements SerialPortEventListener, CommPortOwnershipLis
 
                 serialPort = (SerialPort) portId.open("GatewayGSM", 2000);
                 serialPort.setSerialPortParams(115200, SerialPort.DATABITS_8, SerialPort.STOPBITS_1, SerialPort.PARITY_NONE);
-            } catch (PortInUseException | UnsupportedCommOperationException e) {
-                JOptionPane.showMessageDialog(null, e.getMessage(), "SSN", JOptionPane.ERROR_MESSAGE);
+            } catch (PortInUseException | UnsupportedCommOperationException ex) {
+                Logger.getLogger(GSMConnect.class.getName()).log(Level.SEVERE, null, ex);
 
             }
             try {
                 inputStream = serialPort.getInputStream();
                 outputStream = serialPort.getOutputStream();
-            } catch (IOException e) {
-                JOptionPane.showMessageDialog(null, e.getMessage(), "SSN", JOptionPane.ERROR_MESSAGE);
+            } catch (IOException ex) {
+                 Logger.getLogger(GSMConnect.class.getName()).log(Level.SEVERE, null, ex);
             }
             /*
                     *  Set the hardware flow control
@@ -96,35 +90,35 @@ public class GSMConnect implements SerialPortEventListener, CommPortOwnershipLis
 //                serialPort.setFlowControlMode(SerialPort.FLOWCONTROL_NONE);
                 serialPort.setFlowControlMode(SerialPort.FLOWCONTROL_RTSCTS_IN | SerialPort.FLOWCONTROL_RTSCTS_OUT);
                 serialPort.setDTR(true);
-                buffer = true;
             } catch (UnsupportedCommOperationException ex) {
                 Logger.getLogger(GSMConnect.class.getName()).log(Level.SEVERE, null, ex);
-                serialPort.setDTR(true);
             }
             /**
              * These are the events we want to know about /** These are the
              * events we want to know about
              */
-
             serialPort.addEventListener(this);
             serialPort.notifyOnCTS(true);
             serialPort.notifyOnDSR(true);
             serialPort.notifyOnOutputEmpty(true);
+
         } else {
-            JOptionPane.showMessageDialog(null, "COM Port not found!!",
-                    "SSN", JOptionPane.ERROR_MESSAGE);
+            System.out.println("COM Port not found!!");
             throw new NullPointerException("COM Port not found!!");
         }
     }
 
     public void send(String cmd, int timeout) {
         serialPort.setRTS(true);
-        System.out.println(cmd);
-        buffer = false;
         try {
+            outputStream.write(cmd.getBytes());
+            outputStream.flush();
+            System.out.println("Sended" + cmd);
             Thread.sleep(timeout);
         } catch (InterruptedException ex) {
-            JOptionPane.showMessageDialog(null, ex.getMessage(), "SSN", JOptionPane.ERROR_MESSAGE);
+            Logger.getLogger(GSMConnect.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (IOException ex) {
+            Logger.getLogger(GSMConnect.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
 
@@ -145,49 +139,34 @@ public class GSMConnect implements SerialPortEventListener, CommPortOwnershipLis
                 break;
             case SerialPortEvent.CD:
                 break;
-            case SerialPortEvent.CTS: //modem está preparadado para receber dados
+            case SerialPortEvent.CTS: //recieve a ask to send data, this side must prepare to read.
                 count++;
                 if (serialPort.isCTS()) {
                     System.out.println("CTS");
-                    if (serialPort.isRTS() && serialPort.isDSR()) {
-                        try {
-                            System.out.println("CTS - RTS");
-                            outputStream.write("ATZ".getBytes());
-                            outputStream.flush();
-                            Thread.sleep(2000);
-                        } catch (IOException ex) {
-                            Logger.getLogger(GSMConnect.class.getName()).log(Level.SEVERE, null, ex);
-                        } catch (InterruptedException ex) {
-                            Logger.getLogger(GSMConnect.class.getName()).log(Level.SEVERE, null, ex);
-                        }
-                    }
-                } else if (buffer) {
                     try {
                         if (inputStream.available() > 0) {
-                            System.out.println("buffer-RTS");
+                            System.out.println("buffer-CTS");
                             while (inputStream.available() > 0) {
                                 String aux;
                                 byte[] readBuffer = new byte[2048];
                                 int numBytes = inputStream.read(readBuffer);
                                 aux = new String(readBuffer);
                                 readBuffer = new byte[2048];
-
                                 System.out.println(LocalDateTime.now().toString() + ": " + aux);
+                                send("OK", 5000);
                             }
-
                         }
                     } catch (IOException ex) {
                         Logger.getLogger(GSMConnect.class.getName()).log(Level.SEVERE, null, ex);
                     }
                 }
                 break;
-            case SerialPortEvent.DSR:                               
+            case SerialPortEvent.DSR:
                 break;
             case SerialPortEvent.RI:
                 break;
             case SerialPortEvent.OUTPUT_BUFFER_EMPTY:
                 System.out.println("OUTPUT_BUFFER_EMPTY");
-                buffer = true;
                 serialPort.setRTS(false);
                 break;
             case SerialPortEvent.DATA_AVAILABLE:
@@ -196,7 +175,8 @@ public class GSMConnect implements SerialPortEventListener, CommPortOwnershipLis
     }
 
     @Override
-    public void ownershipChange(int type) {
+    public void ownershipChange(int type
+    ) {
         switch (type) {
             case CommPortOwnershipListener.PORT_UNOWNED:
                 System.out.println(portId.getName() + ": PORT_UNOWNED");
